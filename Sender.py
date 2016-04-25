@@ -45,8 +45,9 @@ class Sender(BasicSender.BasicSender):
             seqno = int(seqno) - 1
         except:
             raise ValueError
-        if seqno in self.unack_packets:
-            del self.unack_packets[seqno]
+        for packet_seqno in self.unack_packets.keys():
+            if packet_seqno <= seqno:
+                del self.unack_packets[packet_seqno]
 
         if seqno == self.fin_seqno:
             if self.debug:
@@ -61,17 +62,20 @@ class Sender(BasicSender.BasicSender):
 
     def _send_data(self):
         while len(self.unack_packets) < self.max_buf_size:
-            print "send dat %d" % self.current_seqno
             msg = self.infile.read(PACKET_SIZE)
+
             if len(msg) == 0:
                 self._send_fin()
-            else:
-                packet = self.make_packet('dat', self.current_seqno, msg)
-                self._send_helper(packet)
+                return
+
+            if self.debug:
+                print "send dat %d" % self.current_seqno
+            packet = self.make_packet('dat', self.current_seqno, msg)
+            self._send_helper(packet)
 
     def _send_fin(self):
         if self.debug:
-            print "send fin"
+            print "send fin %d" % self.current_seqno
         packet = self.make_packet('fin', self.current_seqno, "")
         self.fin_seqno = self.current_seqno
         self._send_helper(packet)
