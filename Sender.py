@@ -63,6 +63,9 @@ class Sender(BasicSender.BasicSender):
         seqno = ack_seqno - 1
         for packet_seqno in self.unack_packets.keys():
             if packet_seqno <= seqno:
+                timer = self.timers[packet_seqno]
+                timer.cancel()
+                del self.timers[packet_seqno]
                 del self.unack_packets[packet_seqno]
 
         if seqno == self.fin_seqno:
