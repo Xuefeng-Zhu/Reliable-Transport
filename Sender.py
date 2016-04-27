@@ -20,8 +20,11 @@ class Sender(BasicSender.BasicSender):
         self.debug = debug
         self.max_buf_size = 7
         self.current_seqno = 0
-        self.unack_packets = {}
+        self.latest_ack_seqno = None
+        self.latest_ack_count = 0
         self.fin_seqno = None
+        self.unack_packets = {}
+        self.timers = {}
 
     # Main sending loop.
     def start(self):
@@ -40,11 +43,24 @@ class Sender(BasicSender.BasicSender):
                 self._send_data()
 
     def _handle_ack(self, message):
-        msg_type, seqno, _, _ = self.split_packet(message)
+        msg_type, ack_seqno, _, _ = self.split_packet(message)
         try:
-            seqno = int(seqno) - 1
+            ack_seqno = int(ack_seqno)
         except:
             raise ValueError
+
+        if ack_seqno == self.latest_ack_seqno:
+            self.latest_ack_count += 1
+            if self.latest_ack_count == 4:
+                timer = self.timers[ack_seqno]
+                timer.cancel()
+                self._resend_packet(ack_seqno)
+            return
+        else:
+            self.latest_ack_seqno = ack_seqno
+            self.latest_ack_count = 1
+
+        seqno = ack_seqno - 1
         for packet_seqno in self.unack_packets.keys():
             if packet_seqno <= seqno:
                 del self.unack_packets[packet_seqno]
@@ -90,6 +106,7 @@ class Sender(BasicSender.BasicSender):
         timer = threading.Timer(RETRANSMIT_TIME, self._resend_packet,
                                 args=[seqno])
         timer.start()
+        self.timers[seqno] = timer
 
     def _resend_packet(self, seqno):
         packet = self.unack_packets.get(seqno)
@@ -98,6 +115,8 @@ class Sender(BasicSender.BasicSender):
             self._set_timer(seqno)
             if self.debug:
                 print "resend packet %d" % seqno
+        else:
+            del self.timers[seqno]
 
 
 '''
