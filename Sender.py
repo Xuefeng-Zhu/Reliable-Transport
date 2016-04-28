@@ -45,10 +45,16 @@ class Sender(BasicSender.BasicSender):
     def _handle_ack(self, message):
         msg_type, ack_seqno, _, _ = self.split_packet(message)
         try:
+            if self.sackMode:
+                ack_seqno, sack_seqnos = ack_seqno.split(";")
+                sack_seqnos = sack_seqnos.split(",")\
+                    if len(sack_seqnos) else []
+
             ack_seqno = int(ack_seqno)
         except:
             raise ValueError
 
+        # fast retransmition
         if ack_seqno == self.latest_ack_seqno:
             self.latest_ack_count += 1
             if self.latest_ack_count == 4:
@@ -60,18 +66,28 @@ class Sender(BasicSender.BasicSender):
             self.latest_ack_seqno = ack_seqno
             self.latest_ack_count = 1
 
+        if self.sackMode and len(sack_seqnos):
+            print sack_seqnos
+            for sack_seqno in map(int, sack_seqnos):
+                if sack_seqno in self.unack_packets:
+                    self._acknowledge_packet(sack_seqno)
+
         seqno = ack_seqno - 1
         for packet_seqno in self.unack_packets.keys():
             if packet_seqno <= seqno:
-                timer = self.timers[packet_seqno]
-                timer.cancel()
-                del self.timers[packet_seqno]
-                del self.unack_packets[packet_seqno]
+                self._acknowledge_packet(packet_seqno)
 
         if seqno == self.fin_seqno:
             if self.debug:
                 print "receive fin ack"
             exit()
+
+    def _acknowledge_packet(self, packet_seqno):
+        timer = self.timers[packet_seqno]
+        timer.cancel()
+        del self.timers[packet_seqno]
+        del self.unack_packets[packet_seqno]
+
 
     def _send_syn(self):
         if self.debug:
